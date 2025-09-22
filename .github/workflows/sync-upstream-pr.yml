@@ -1,0 +1,78 @@
+name: Sync Upstream via PR
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      downstream_branch:
+        description: Downstream branch to update (destination)
+        required: false
+        default: main
+      upstream_branch:
+        description: Upstream branch to sync from (source)
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      DOWNSTREAM_BRANCH: ${{ inputs.downstream_branch || 'main' }}
+      UPSTREAM_BRANCH: ${{ inputs.upstream_branch || 'main' }}
+
+    steps:
+      - name: Checkout downstream repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DOWNSTREAM_BRANCH }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/briangallagher/test-up-again
+          git fetch upstream
+
+      # Create a branch in downstream that points at the upstream tip
+      - name: Create branch from upstream tip
+        run: |
+          git checkout -B sync/upstream-${UPSTREAM_BRANCH} upstream/${UPSTREAM_BRANCH}
+          git push origin sync/upstream-${UPSTREAM_BRANCH} --force-with-lease
+
+      # Open or update a PR into downstream
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          HEAD_BRANCH="sync/upstream-${UPSTREAM_BRANCH}"
+          BASE_BRANCH="${DOWNSTREAM_BRANCH}"
+          REPO_REF="${GITHUB_REPOSITORY}"
+          TITLE="Sync upstream/${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}"
+          BODY="Upstream -> downstream sync"
+
+          PR_NUMBER=$(gh pr list --repo "$REPO_REF" --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO_REF" \
+              --title "$TITLE" \
+              --body "$BODY"
+          else
+            gh pr create --repo "$REPO_REF" \
+              --base "$BASE_BRANCH" \
+              --head "$HEAD_BRANCH" \
+              --title "$TITLE" \
+              --body "$BODY"
+          fi
+
+
