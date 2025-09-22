@@ -63,7 +63,7 @@ jobs:
       # 3️⃣ Add upstream remote and fetch
       - name: Add upstream remote
         run: |
-          git remote add upstream https://github.com/briangallagher/test-upstream
+          git remote add upstream https://github.com/briangallagher/test-up-again
           git fetch upstream
 
       # 4️⃣ Check for upstream changes
